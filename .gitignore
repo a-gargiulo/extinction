@@ -1,2 +1,4 @@
 __pycache__/
 .venv/
+.flake8
+FFCM-2/
