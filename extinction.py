@@ -227,12 +227,13 @@ def print_results(f: ct.onedim.CounterflowDiffusionFlame, n_last_burning: int):
 
 if __name__ == "__main__":
     # Inputs
-    # rxn = 'FFCM-2/FFCM-2.yaml'
-    rxn = 'gri30.yaml'
+    rxn = 'FFCM-2/FFCM-2.yaml'
+    # rxn = 'gri30.yaml'
+    p = [x * ATM_TO_PA for x in [1.0, 2.0, 4.0, 8.0, 10.0]]
     bc: BoundaryConditions = {
-        "a_g_init": 100,
+        "a_g_init": 200,
         "L": L,
-        "P": 1.0 * ATM_TO_PA,
+        "P": 0.0,
         "T_f": 300.0,
         "X_f": "CH4:1",
         "T_ox": 300.0,
@@ -240,14 +241,17 @@ if __name__ == "__main__":
     }
     grid = [3.0, 0.2, 0.2, 0.03]
 
-    # Simulation
-    gas, f, T_lim = initialize(rxn, bc, grid)
-    a_max, T_max, n_last_burning = calculate_extinction_strain_rate(f, T_lim)
-    print_results(f, n_last_burning)
+    for ii, pp in enumerate(p):
+        bc["P"] = pp
 
-    # Plot the maximum temperature over the maximum axial velocity gradient
-    plt.figure()
-    plt.semilogx(a_max, T_max, marker='o')
-    plt.xlabel(r'$a_{max}$ [1/s]')
-    plt.ylabel(r'$T_{max}$ [K]')
-    plt.show()
+        # Simulation
+        gas, f, T_lim = initialize(rxn, bc, grid)
+        a_max, T_max, n_last_burning = calculate_extinction_strain_rate(f, T_lim)
+        print_results(f, n_last_burning)
+
+        # Plot the maximum temperature over the maximum axial velocity gradient
+        plt.figure()
+        plt.semilogx(a_max, T_max, marker='o')
+        plt.xlabel(r'$a_{max}$ [1/s]')
+        plt.ylabel(r'$T_{max}$ [K]')
+        plt.show()
