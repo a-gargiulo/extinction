@@ -1,5 +1,4 @@
 """Calculate the extinction strain rate of non-premixed counterflow diffusion flames at various pressures using Cantera."""
-import pdb
 import sys
 import pickle
 from pathlib import Path
@@ -27,7 +26,7 @@ R_U = R_U * 1e-03
 L = 5.45e-03
 OUTPUT_PATH = Path() / "data"
 OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-SOLUTION_FILE = OUTPUT_PATH / "flame_data.h5"
+SOLUTION_FILE = OUTPUT_PATH / "methane_flame_data.h5"
 SOLUTION_FILE.unlink(missing_ok=True)
 
 
@@ -140,7 +139,6 @@ def calculate_extinction(ii: int, p_fac: float, f: CounterflowFlame, T_lim: floa
     delta_alpha_factor = 50.
     # Limit of the refinement: Minimum normalized strain rate increase
     delta_alpha_min = .001
-    # delta_alpha_min = 100.0
     # Limit of the Temperature decrease
     delta_T_min = 1 # K
 
@@ -173,16 +171,16 @@ def calculate_extinction(ii: int, p_fac: float, f: CounterflowFlame, T_lim: floa
                       f.velocity * strain_factor ** exp_u_a * p_fac ** exp_u_p)
         f.set_profile('spread_rate', normalized_grid,
                       f.spread_rate * strain_factor ** exp_V_a * p_fac ** exp_V_p)
-        # Update pressure curvature f.set_profile('lambda', normalized_grid, f.L * strain_factor ** exp_lam_a * p_fac ** exp_lam_p)
+        # Update pressure curvature
+        f.set_profile('lambda', normalized_grid, f.L * strain_factor ** exp_lam_a * p_fac ** exp_lam_p)
         try:
-            # f.solve(loglevel=0, auto=True)
             f.solve(loglevel=0, auto=False)
         except ct.CanteraError as e:
             print('Error: Did not converge at n =', n, e)
 
         T_max.append(np.max(f.T))
-        # a_max.append(np.max(np.abs(np.gradient(f.velocity) / np.gradient(f.grid))))
         a_max.append(f.strain_rate('max'))
+
         # CHECK FOR EXTINCTION
         if not np.isclose(np.max(f.T), T_lim):
             # Flame is still burning, so proceed to next strain rate
@@ -194,7 +192,6 @@ def calculate_extinction(ii: int, p_fac: float, f: CounterflowFlame, T_lim: floa
             print('Flame burning at alpha = {:8.4F}. Proceeding to the next iteration, '
                   'with delta_alpha = {}'.format(alpha[-1], delta_alpha))
         elif ((T_max[-2] - T_max[-1] < delta_T_min) and (delta_alpha < delta_alpha_min)):
-            print(f"DELTA_T_MIN: {delta_T_min}")
             # If the temperature difference is too small and the minimum relative
             # strain rate increase is reached, save the last, non-burning, solution
             # to the output file and break the loop
@@ -220,6 +217,9 @@ def calculate_extinction(ii: int, p_fac: float, f: CounterflowFlame, T_lim: floa
     print(f"EXTINCTION SIMULATION COMPLETED FOR PRESSURE {ii+1}!")
     print("-----------------------------------------------------")
 
+    file_name, entry = names(f"p{ii+1}/extinction/{n_last_burning:04d}")
+    f.restore(file_name, entry)
+
     T_ext = np.max(f.T)
     a_ext = {
         "mean": f.strain_rate('mean'),
@@ -228,61 +228,90 @@ def calculate_extinction(ii: int, p_fac: float, f: CounterflowFlame, T_lim: floa
         "pot_ox": f.strain_rate('potential_flow_oxidizer'),
         "stoich": f.strain_rate('stoichiometric', fuel=bc["fuel"])
     }
-    print(T_max)
 
     return (T_ext, a_ext, n_last_burning)
 
 
+def plot_data():
+    pass
+    # fig, ax1 = plt.subplots()
+
+    # # Plot the first dataset on the first y-axis (ax1)
+    # ax1.semilogx(p, T_ext, 'b-')
+    # ax1.set_xlabel('p')
+    # ax1.set_ylabel('T_max', color='b')
+    # ax1.tick_params(axis='y', labelcolor='b')
+
+    # # Create a second y-axis that shares the same x-axis
+    # ax2 = ax1.twinx()
+
+
+    # a_plot = [x["mean"] for x in a_ext]
+
+    # # Plot the second dataset on the second y-axis (ax2)
+    # ax2.semilogx(p, a_plot, 'r-')
+    # ax2.set_ylabel('a_max', color='r')
+    # ax2.tick_params(axis='y', labelcolor='r')
+
+    # # Set the second y-axis to logarithmic scale
+    # ax2.set_yscale('log')
+
+    # # Show the plot
+    # plt.show()
+
+
 if __name__ == "__main__":
+    # Modes
+    calcExt = True
+    plotDat = False
+
     # Inputs
-    rxn = "h2o2.yaml"
-    # rxn = 'FFCM-2/FFCM-2.yaml'
-    # rxn = 'gri30.yaml'
-    # p = [x * BAR_TO_PA for x in [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 80.0, 100.0, 200.0]]
-    p = [x * BAR_TO_PA for x in [1.0, 10.0, 100.0]]
+    rxn = 'FFCM-2/FFCM-2.yaml'
+    pressures = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]) * BAR_TO_PA
     bc: BoundaryConditions = {
-        "a_g_init": 20000,
+        "a_g_init": 80,
         "L": L,
-        "P": p[0],
-        "fuel": "H2",
+        "P": pressures[0],
+        "fuel": "CH4",
         "T_f": 300.0,
-        "X_f": "H2:1.0",
+        "X_f": "CH4:1.0",
         "T_ox": 300.0,
-        # "X_ox": "O2:0.21 N2:0.78 AR:0.01"
-        "X_ox": "O2:1.0"
+        "X_ox": "O2:0.21 N2:0.78 AR:0.01"
     }
     grid = [3.0, 0.2, 0.2, 0.03]
-    # grid = [2.0, 0.01, 0.015, 0.0]
 
-    # Outputs
-    T_EXT = []
-    A_EXT = []
-    N_EXT = []
+    # Caclulation
+    if calcExt:
+        TT = []
+        AA = []
+        NN = []
 
-    for ii, pp in enumerate(p):
-        bc["P"] = pp
-        if ii == 0:
-            pressure_factor = 1.0
-            a_factor = 1.0
-        else:
-            pressure_factor = pp / p[ii-1]
+        for ii, p in enumerate(pressures):
+            bc["P"] = p
 
-        # a_g_init_old = bc["a_g_init"]
-        # bc["a_g_init"] = bc["a_g_init"] * pressure_factor**(3.0/2.0)
-        # bc["L"] = bc["L"] * (bc["a_g_init"] / a_g_init_old) ** (-1.0/2.0)  * pressure_factor**(-1.0/2.0)
+            if ii == 0:
+                p_fac = 1.0
+                a_fac = 1.0
+            else:
+                p_fac = p / pressures[ii - 1]
+                a_g_init_old = bc["a_g_init"]
+                bc["a_g_init"] = bc["a_g_init"] * p_fac**(3.0 / 2.0)
+                a_fac = bc["a_g_init"] / a_g_init_old
+                bc["L"] = bc["L"] * a_fac ** (-1.0 / 2.0) * p_fac ** (-1.0 / 2.0)
 
-        # Simulation
-        gas, f, T_lim = initialize(ii, rxn, bc, grid)
-        T_ext, a_ext, n_last_burning = calculate_extinction(ii, pressure_factor, f, T_lim)
-        T_EXT.append(T_ext)
-        A_EXT.append(a_ext)
-        N_EXT.append(n_last_burning)
+            # Simulation
+            gas, f, T_lim = initialize(ii, rxn, bc, grid)
+            T_ext, a_ext, n_last_burning = calculate_extinction(ii, p_fac, f, T_lim)
 
-    with open("./data/extinction.pkl", "wb") as fl:
-        pickle.dump((p, T_EXT, A_EXT, N_EXT), fl)
-        # # Plot the maximum temperature over the maximum axial velocity gradient
-        # plt.figure()
-        # plt.semilogx(a_max, T_max, marker='o')
-        # plt.xlabel(r'$a_{max}$ [1/s]')
-        # plt.ylabel(r'$T_{max}$ [K]')
-        # plt.show()
+            TT.append(T_ext)
+            AA.append(a_ext)
+            NN.append(n_last_burning)
+
+        with open("./data/extinction.pkl", "wb") as fle:
+            pickle.dump((pressures, TT, AA, NN), fle)
+
+        print(TT)
+
+    # Plotting
+    if plotDat:
+        plot_data()
